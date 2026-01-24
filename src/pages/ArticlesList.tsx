@@ -193,7 +193,7 @@ export default function ArticleList() {
                         {a.images.slice(0, 4).map((img, idx) => (
                           <img
                             key={idx}
-                            src={img}
+                           src={img}
                             alt={`${a.title} image ${idx + 1}`}
                             className="ml-[50%] rounded-lg w-full h-32 object-cover "
                           />
