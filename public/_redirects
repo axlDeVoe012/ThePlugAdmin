@@ -1,3 +1,9 @@
+
 /api/* http://theplug-env.eba-m4aukda5.eu-north-1.elasticbeanstalk.com/api/:splat  200!
 /hubs/* http://theplug-env.eba-m4aukda5.eu-north-1.elasticbeanstalk.com/hubs/:splat 200!
-/* /index.html                                                                   200
+
+# ✅ NEW: Proxy Images so they don't get blocked by "Mixed Content" rules
+/Images/* http://theplug-env.eba-m4aukda5.eu-north-1.elasticbeanstalk.com/Images/:splat 200!
+
+# React Router Fallback
+/* /index.html 200
