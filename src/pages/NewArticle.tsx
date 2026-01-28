@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar"; 
 import { api } from "../api"; // ✅ Uses the interceptor for Auth
 import { showSuccess, showError } from "../components/Alert";
-import { X, Upload, Image as ImageIcon } from "lucide-react"; // Icons for better UI
+import { X, Upload } from "lucide-react"; // Icons for better UI
 
 export default function NewArticle() {
     const navigate = useNavigate();
