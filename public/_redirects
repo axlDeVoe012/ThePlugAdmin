@@ -1,9 +1,15 @@
+# --- Netlify Proxy Rules ---
 
+# 1. API: Forward all /api requests to AWS
 /api/* http://theplug-env.eba-m4aukda5.eu-north-1.elasticbeanstalk.com/api/:splat  200!
-/hubs/* http://theplug-env.eba-m4aukda5.eu-north-1.elasticbeanstalk.com/hubs/:splat 200!
 
-# ✅ NEW: Proxy Images so they don't get blocked by "Mixed Content" rules
-/Images/* http://theplug-env.eba-m4aukda5.eu-north-1.elasticbeanstalk.com/wwwroot/uploads/:splat 200!
+# 2. SignalR: Forward the Hub connection
+/hubs/* http://theplug-env.eba-m4aukda5.eu-north-1.elasticbeanstalk.com/hubs/:splat  200!
 
-# React Router Fallback
-/* /index.html 200
+# 3. Images: Forward image requests to the 'uploads' folder on AWS
+#    This is CRITICAL for your images to load without Mixed Content errors.
+/uploads/* http://theplug-env.eba-m4aukda5.eu-north-1.elasticbeanstalk.com/uploads/:splat  200!
+
+# --- React Router Fallback ---
+# 4. Catch-all: Send everything else to index.html so React handles the routing
+/* /index.html  200
