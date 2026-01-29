@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import Navbar from "../components/Navbar"; // Imported Navbar
+// ✅ 1. Import SignalR dependencies
+import { HubConnectionBuilder, LogLevel, HttpTransportType } from "@microsoft/signalr";
+import Navbar from "../components/Navbar"; 
 import { api } from "../api";
 import { showSuccess, showError, showConfirm } from "../components/Alert";
 
@@ -27,6 +29,34 @@ export default function ArticleList() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // ✅ HELPER: The "Universal" Image Cleaner
+  // This guarantees images load via Proxy regardless of what's in the DB
+  const getImageUrl = (path: string) => {
+    if (!path) return "";
+    
+    // 1. If the DB saved a full URL (localhost or AWS), strip the domain.
+    if (path.includes("http")) {
+       try {
+         const urlObj = new URL(path);
+         return urlObj.pathname; // Returns "/uploads/image.jpg"
+       } catch (e) {
+         console.error("Invalid URL in DB:", path);
+       }
+    }
+
+    // 2. If it's already a correct relative path, return it.
+    if (path.startsWith("/uploads") || path.startsWith("/Images")) {
+        return path;
+    }
+    
+    // 3. Fallback: If backend just sent "file.jpg", assume it's in "uploads"
+    if (!path.startsWith("/")) {
+        return `/uploads/${path}`;
+    }
+    
+    return path;
+  };
+
   const normalizeArticle = (raw: RawArticle): Article => ({
     id: raw.id,
     title: raw.title ?? "Untitled",
@@ -36,8 +66,57 @@ export default function ArticleList() {
     createdAt: raw.createdAt ?? new Date().toISOString(),
   });
 
+  // ✅ 2. SignalR Setup & Initial Load
   useEffect(() => {
+    // A. Load Initial Data
     load();
+
+    // B. Configure SignalR Connection
+    const connection = new HubConnectionBuilder()
+      // Use relative path to hit the Netlify Proxy
+      .withUrl("/hubs/notifications", { 
+          accessTokenFactory: () => sessionStorage.getItem("token") || "",
+          // 🚨 CRITICAL FIX: Force Long Polling to avoid WebSocket/Proxy errors
+          transport: HttpTransportType.LongPolling
+      })
+      .withAutomaticReconnect()
+      .configureLogging(LogLevel.Information)
+      .build();
+
+    // C. Register Event Handlers
+    connection.on("ArticleCreated", (newRawArticle: RawArticle) => {
+      console.log("Real-time: Article Created");
+      const normalized = normalizeArticle(newRawArticle);
+      setItems(prev => [normalized, ...prev]); 
+    });
+
+    connection.on("ArticleUpdated", (updatedRawArticle: RawArticle) => {
+      console.log("Real-time: Article Updated");
+      const normalized = normalizeArticle(updatedRawArticle);
+      setItems(prev => prev.map(a => a.id === normalized.id ? normalized : a));
+    });
+
+    connection.on("ArticleDeleted", (articleId: number) => {
+      console.log("Real-time: Article Deleted");
+      setItems(prev => prev.filter(a => a.id !== articleId));
+    });
+
+    // D. Start Connection
+    const startConnection = async () => {
+        try {
+            await connection.start();
+            console.log("✅ ArticleHub Connected via Long Polling");
+        } catch (err) {
+            console.error("❌ SignalR Connection Error:", err);
+        }
+    };
+
+    startConnection();
+
+    // E. Cleanup
+    return () => {
+      connection.stop();
+    };
   }, []);
 
   const load = async () => {
@@ -72,20 +151,19 @@ export default function ArticleList() {
     try {
       await api.delete(`/Articles/delete-article?id=${id}`);
       showSuccess("Article deleted successfully!");
-      await load();
+      // SignalR will handle the UI update, but we do optimistic update for speed
+      setItems(prev => prev.filter(a => a.id !== id));
     } catch (err: any) {
       console.error("Error deleting article:", err);
       showError(err.response?.data?.message || "Failed to delete article");
     }
   };
 
-  // Render shimmer placeholders with multiple image blocks
   if (loading) {
     const placeholders = Array.from({ length: 4 });
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-900 via-gray-900 to-black">
         <Navbar />
-        {/* Added wrapper for padding so Navbar stays full width */}
         <div className="py-10 px-6">
           <div className="max-w-5xl mx-auto grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {placeholders.map((_, idx) => (
@@ -93,40 +171,17 @@ export default function ArticleList() {
                 key={idx}
                 className="bg-white/10 border border-white/10 rounded-2xl p-4 shadow-xl backdrop-blur-md animate-pulse flex flex-col"
               >
-                {/* Simulate multiple images */}
                 <div className="grid grid-cols-2 gap-2 mb-4">
                   <div className="h-32 w-full bg-white/20 rounded-lg" />
                   <div className="h-32 w-full bg-white/20 rounded-lg" />
                 </div>
                 <div className="h-6 bg-white/20 rounded w-3/4 mb-2" />
                 <div className="h-4 bg-white/20 rounded w-full mb-2" />
-                <div className="h-4 bg-white/20 rounded w-5/6 mb-2" />
-                <div className="h-8 w-24 bg-white/20 rounded mt-4 ml-auto" />
               </div>
             ))}
           </div>
-          {/* Spinner with loading text */}
           <div className="flex justify-center items-center mt-8">
-            <svg
-              className="animate-spin h-6 w-6 text-green-400 mr-3"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              ></circle>
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8v8H4z"
-              ></path>
-            </svg>
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-green-400 mr-3"></div>
             <span className="text-green-300 font-semibold text-lg">Loading articles...</span>
           </div>
         </div>
@@ -138,7 +193,6 @@ export default function ArticleList() {
     return (
       <div className="min-h-screen flex flex-col bg-gradient-to-br from-green-900 via-gray-900 to-black">
         <Navbar />
-        {/* Centering wrapper */}
         <div className="flex-grow flex items-center justify-center">
           <div className="bg-red-600/20 border border-red-500/50 text-red-200 px-6 py-4 rounded-xl backdrop-blur-lg shadow-xl">
             <p>{error}</p>
@@ -157,14 +211,13 @@ export default function ArticleList() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-900 via-gray-900 to-black">
       <Navbar />
-      {/* Main Content Wrapper with Padding */}
       <div className="py-6 px-4">
         <div className="max-w-5xl mx-auto">
           <div className="flex justify-between items-center mb-10">
             <h1 className="text-4xl font-bold text-white">Articles</h1>
             <a
               href="/newarticle"
-              className="bg-green-600 hover:bg-green-700 text-white  rounded-3xl p-2 shadow-md transition"
+              className="bg-green-600 hover:bg-green-700 text-white rounded-3xl p-2 shadow-md transition"
             >
               + New Article
             </a>
@@ -193,9 +246,15 @@ export default function ArticleList() {
                         {a.images.slice(0, 4).map((img, idx) => (
                           <img
                             key={idx}
-                           src={img}
+                            // ✅ 3. Use the helper to fix image paths
+                            src={getImageUrl(img)}
                             alt={`${a.title} image ${idx + 1}`}
-                            className="ml-[50%] rounded-lg w-full h-32 object-cover "
+                            className="ml-[50%] rounded-lg w-full h-32 object-cover"
+                            // Hide broken images gracefully
+                            onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                            }}
                           />
                         ))}
                       </div>
