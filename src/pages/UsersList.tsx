@@ -63,7 +63,7 @@ export default function UsersList() {
               <p className="text-gray-400 text-sm mt-1">Manage admin access</p>
             </div>
             <Link
-              to="/add-user"
+              to="/newuser"
               className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-xl shadow-md transition"
             >
               + Add Admin
