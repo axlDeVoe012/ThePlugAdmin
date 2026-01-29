@@ -4,10 +4,12 @@ import { api } from "../api";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import Swal from "sweetalert2";
-import { HubConnectionBuilder } from "@microsoft/signalr"; // 1. Import SignalR
-
-// Define Base URL for SignalR (Adjust port if necessary)
-const API_BASE = import.meta.env.VITE_API_BASE;
+// ✅ 1. Import HttpTransportType for the fix
+import { HubConnectionBuilder, HttpTransportType, LogLevel } from "@microsoft/signalr"; 
+import { X } from "lucide-react";
+// Define Base URL for SignalR
+// If VITE_API_BASE is empty (using proxy), we just use empty string to let proxy handle it
+const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 // --- Interfaces ---
 interface Client {
@@ -89,39 +91,53 @@ export default function ClientList() {
         }
     }, []);
 
-    // --- 2. SIGNALR INTEGRATION ---
+    // --- 2. SIGNALR INTEGRATION (FIXED) ---
     useEffect(() => {
         // A. Initial Fetch
         fetchAllClients();
 
-        // B. Setup Connection
+        // B. Setup Connection with Fixes
         const connection = new HubConnectionBuilder()
-            .withUrl(`${API_BASE}/hubs/notifications`) // Ensure this matches Program.cs
+            // ✅ Use the relative path so it hits the Netlify Proxy
+            .withUrl(`/hubs/notifications`, { 
+                // ✅ Pass the Token for Auth
+                accessTokenFactory: () => sessionStorage.getItem("token") || "",
+                // ✅ Force Long Polling to fix 404/WebSocket errors
+                transport: HttpTransportType.LongPolling
+            })
             .withAutomaticReconnect()
+            .configureLogging(LogLevel.Information)
             .build();
 
         // C. Register Event Handlers
         connection.on("ClientCreated", (newClient: Client) => {
-            console.log("Real-time: Client Created");
+            console.log("Real-time: Client Created", newClient);
             setAllClients(prev => [newClient, ...prev]);
         });
 
         connection.on("ClientUpdated", (updatedClient: Client) => {
-            console.log("Real-time: Client Updated");
+            console.log("Real-time: Client Updated", updatedClient);
             setAllClients(prev => prev.map(c =>
                 c.clientId === updatedClient.clientId ? updatedClient : c
             ));
         });
 
         connection.on("ClientDeleted", (deletedId: number) => {
-            console.log("Real-time: Client Deleted");
+            console.log("Real-time: Client Deleted", deletedId);
             setAllClients(prev => prev.filter(c => c.clientId !== deletedId));
         });
 
         // D. Start Connection
-        connection.start()
-            .then(() => console.log("Connected to SignalR for Clients"))
-            .catch(err => console.error("SignalR Connection Error: ", err));
+        const startConnection = async () => {
+            try {
+                await connection.start();
+                console.log("✅ ClientHub Connected via Long Polling");
+            } catch (err) {
+                console.error("❌ SignalR Connection Error: ", err);
+            }
+        };
+
+        startConnection();
 
         // E. Cleanup
         return () => {
@@ -147,8 +163,7 @@ export default function ClientList() {
         if (result.isConfirmed) {
             try {
                 await api.delete(`/Clients/delete-client?id=${id}`);
-                // Note: We don't technically need setAllClients here anymore because SignalR will handle it,
-                // but keeping it makes the UI feel instant for the user who clicked delete.
+                // SignalR will handle the UI update, but we do optimistic update for instant feedback
                 setAllClients(prev => prev.filter(c => c.clientId !== id));
 
                 Swal.fire({
@@ -194,7 +209,7 @@ export default function ClientList() {
             try {
                 await api.put(`/Clients/update-client?id=${editingClient.clientId}`, editingClient);
                 
-                // Optimistic update (SignalR will also broadcast this)
+                // Optimistic update
                 setAllClients(prev => prev.map(c =>
                     c.clientId === editingClient.clientId ? editingClient : c
                 ));
@@ -259,11 +274,9 @@ export default function ClientList() {
     const downloadCSV = () => {
         if (filteredClients.length === 0) return;
 
-        // Includes ALL headers
         const header = ["ID,First Name,Last Name,Email,Phone,Gender,Date of Birth,Address,City,Join Date"];
 
         const rows = filteredClients.map(c => {
-            // Escape Address to prevent CSV breaking on commas
             const safeAddress = c.address ? `"${c.address.replace(/"/g, '""')}"` : '""';
             return `${c.clientId},${c.firstName},${c.lastName},${c.email},${c.phoneNumber},${c.gender},${c.dateOfBirth},${safeAddress},${c.city},${c.joinDate}`;
         });
@@ -281,11 +294,9 @@ export default function ClientList() {
 
     // --- FULL PDF EXPORT ---
     const downloadPDF = () => {
-        // Landscape orientation to fit all columns
         const doc = new jsPDF('l', 'mm', 'a4');
         doc.text("Full Client List", 14, 15);
 
-        // Map all data
         const tableData = filteredClients.map(c => [
             c.clientId,
             c.firstName,
@@ -305,16 +316,16 @@ export default function ClientList() {
             startY: 20,
             theme: 'grid',
             headStyles: {
-                fillColor: [16, 185, 129], // Emerald
+                fillColor: [16, 185, 129], 
                 fontSize: 8
             },
             styles: {
-                fontSize: 8, // Smaller font to fit 10 columns
+                fontSize: 8, 
                 cellPadding: 2
             },
             columnStyles: {
-                0: { cellWidth: 10 }, // ID
-                7: { cellWidth: 35 }  // Address (give it more space)
+                0: { cellWidth: 10 }, 
+                7: { cellWidth: 35 } 
             }
         });
 
@@ -325,7 +336,9 @@ export default function ClientList() {
         return (
             <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black text-white relative">
                 <Navbar />
-                <p className="p-6 text-lg text-emerald-100 font-semibold animate-pulse text-center mt-10">Loading clients...</p>
+                <div className="flex justify-center items-center h-[60vh]">
+                     <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-emerald-500"></div>
+                </div>
             </div>
         );
     }
@@ -351,13 +364,13 @@ export default function ClientList() {
                         </h1>
 
                         <div className="flex flex-wrap justify-center gap-3">
-                            <button onClick={downloadPDF} className="btn-glass bg-emerald-600/80 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg transition-all shadow-lg text-sm font-medium">
+                            <button onClick={downloadPDF} className="bg-emerald-600/80 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg transition-all shadow-lg text-sm font-medium border border-white/10">
                                 PDF
                             </button>
-                            <button onClick={downloadCSV} className="btn-glass bg-green-600/80 hover:bg-green-500 text-white px-4 py-2 rounded-lg transition-all shadow-lg text-sm font-medium">
+                            <button onClick={downloadCSV} className="bg-green-600/80 hover:bg-green-500 text-white px-4 py-2 rounded-lg transition-all shadow-lg text-sm font-medium border border-white/10">
                                 CSV
                             </button>
-                            <button onClick={fetchAllClients} className="btn-glass bg-gray-700/80 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-all shadow-lg text-sm font-medium">
+                            <button onClick={fetchAllClients} className="bg-gray-700/80 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-all shadow-lg text-sm font-medium border border-white/10">
                                 Refresh
                             </button>
                         </div>
@@ -368,17 +381,17 @@ export default function ClientList() {
                         <div className="flex flex-col">
                             <label className="text-xs font-bold text-emerald-300 uppercase tracking-wider mb-2">Joined After</label>
                             <input type="date" value={minJoinDate} onChange={(e) => setMinJoinDate(e.target.value)}
-                                className="input-glass w-full p-2 rounded-lg bg-black/20 border border-emerald-500/30 text-emerald-50 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none transition-all" />
+                                className="w-full p-2 rounded-lg bg-black/20 border border-emerald-500/30 text-emerald-50 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none transition-all" />
                         </div>
                         <div className="flex flex-col">
                             <label className="text-xs font-bold text-emerald-300 uppercase tracking-wider mb-2">Min Age</label>
                             <input type="number" value={minAge} onChange={(e) => setMinAge(e.target.value)} placeholder="18"
-                                className="input-glass w-full p-2 rounded-lg bg-black/20 border border-emerald-500/30 text-emerald-50 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none transition-all" />
+                                className="w-full p-2 rounded-lg bg-black/20 border border-emerald-500/30 text-emerald-50 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none transition-all" />
                         </div>
                         <div className="flex flex-col">
                             <label className="text-xs font-bold text-emerald-300 uppercase tracking-wider mb-2">Max Age</label>
                             <input type="number" value={maxAge} onChange={(e) => setMaxAge(e.target.value)} placeholder="65"
-                                className="input-glass w-full p-2 rounded-lg bg-black/20 border border-emerald-500/30 text-emerald-50 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none transition-all" />
+                                className="w-full p-2 rounded-lg bg-black/20 border border-emerald-500/30 text-emerald-50 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none transition-all" />
                         </div>
                     </div>
 
@@ -394,7 +407,7 @@ export default function ClientList() {
                     ) : (
                         <>
                             {/* DESKTOP TABLE */}
-                            <div className="hidden md:block overflow-x-auto rounded-xl border border-emerald-500/20 shadow-xl scrollbar-thin scrollbar-thumb-emerald-600 scrollbar-track-transparent">
+                            <div className="hidden md:block overflow-x-auto rounded-xl border border-emerald-500/20 shadow-xl">
                                 <table className="min-w-full divide-y divide-emerald-500/30 bg-black/20">
                                     <thead className="bg-emerald-900/40">
                                         <tr>
@@ -498,9 +511,7 @@ export default function ClientList() {
                             <div className="p-6 border-b border-emerald-500/20 bg-emerald-900/10 sticky top-0 backdrop-blur-md z-10 flex justify-between items-center">
                                 <h2 className="text-2xl font-bold text-white">Edit Client Details</h2>
                                 <button onClick={() => setEditingClient(null)} className="text-gray-400 hover:text-white transition-colors">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
+                                    <X size={24} />
                                 </button>
                             </div>
 

@@ -19,12 +19,12 @@ function App() {
         <Route path="/" element={<Login/>} />
         <Route path="/login" element={<Login/>} />
         <Route path="/articlelist" element={<Protected><ArticleList/></Protected>} />
-        <Route path="/newarticle" element={<NewArticle/>} />
-        <Route path="/edit/:id" element={<EditArticle/>} />
+        <Route path="/newarticle" element={<Protected><NewArticle/></Protected>} />
+        <Route path="/edit/:id" element={<Protected><EditArticle/></Protected>} />
         <Route path="/users" element={<Protected><UsersList/></Protected>} />
-        <Route path="/newuser" element={<NewUser/>} />
-        <Route path ="/clientlist" element = {<ClientList/>}/>
-        <Route path="/edit-user/:id" element={<EditUser />} />
+        <Route path="/newuser" element={<Protected><NewUser/></Protected>} />
+        <Route path ="/clientlist" element = {<Protected><ClientList/></Protected>}/>
+        <Route path="/edit-user/:id" element={<Protected><EditUser/> </Protected>} />
       </Routes>
     </>
   )
