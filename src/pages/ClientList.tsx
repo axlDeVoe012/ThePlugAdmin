@@ -7,9 +7,7 @@ import Swal from "sweetalert2";
 // ✅ 1. Import HttpTransportType for the fix
 import { HubConnectionBuilder, HttpTransportType, LogLevel } from "@microsoft/signalr"; 
 import { X } from "lucide-react";
-// Define Base URL for SignalR
-// If VITE_API_BASE is empty (using proxy), we just use empty string to let proxy handle it
-const API_BASE = import.meta.env.VITE_API_BASE || "";
+
 
 // --- Interfaces ---
 interface Client {
